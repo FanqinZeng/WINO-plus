@@ -1,7 +1,17 @@
 # WINO-DLLM
 
-This repository provides scripts and instructions to evaluate [WINO](https://arxiv.org/pdf/2507.18578) on LLaDA and MMaDA.
+<p>
+  <a href="https://openreview.net/pdf?id=XtLQHlNLxy"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b.svg?style=flat" alt="ICLR 2026"></a>
+</p>
 
+Official implementation of **Wide-In, Narrow-Out: Revokable Decoding for Efficient and Effective DLLMs**.
+
+This repository provides scripts and instructions to evaluate [WINO](https://openreview.net/pdf?id=XtLQHlNLxy) on LLaDA and MMaDA.
+
+
+## Related Project
+
+We are continuing to improve efficient DLLM inference with **ReMix**: [Rejection Mixing: Fast Semantic Propagation of Mask Tokens for Efficient DLLM Inference](https://github.com/Feng-Hong/ReMix-DLLM), accepted to CVPR 2026. ReMix is a training-free decoding method that further explores fast semantic propagation for mask tokens, and it provides unified evaluation scripts for both LLaDA and MMaDA.
 
 ## Evaluation of WINO on LLaDA
 
@@ -96,4 +106,3 @@ bash scripts/eval_baseline.sh
 # Evaluating WINO on the reported six multimodel benchmarks
 bash scripts/eval_wino.sh
 ```
-
