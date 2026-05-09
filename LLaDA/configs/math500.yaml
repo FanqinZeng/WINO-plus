@@ -19,8 +19,12 @@ generation_args:
   block_length: 128
   temperature: 0.0
 
-method: 'wino'
+method: 'wino' # options: default, wino, confidence_threshold
 method_args:
+  confidence_threshold:
+    remasking: 'low_confidence'
+    steps: 256
+    confidence_threshold: 0.8
   wino:
     threshold: 0.7
     threshold_back: 0.9
