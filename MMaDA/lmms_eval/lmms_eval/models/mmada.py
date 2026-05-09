@@ -228,6 +228,12 @@ class MMaDA(lmms):
                 output_ids, inference_step = self.model.mmu_generate_wino(
                     input_ids, gen_length=self.gen_length, block_length=self.block_length, threshold=self.threshold, threshold_back=self.threshold_back)
                 answers = self.uni_prompting.text_tokenizer.batch_decode(output_ids[:, input_ids.shape[1]:], skip_special_tokens=True)
+            elif self.gen_method == 'confidence_threshold':
+                output_ids, _ = self.model.mmu_generate_confidence_threshold(
+                    input_ids, steps=self.diff_step, gen_length=self.gen_length, block_length=self.block_length, confidence_threshold=self.threshold)
+                answers = self.uni_prompting.text_tokenizer.batch_decode(output_ids[:, input_ids.shape[1]:], skip_special_tokens=True)
+            else:
+                raise ValueError(f"Unknown generation method: {self.gen_method}")
 
             for ans, context in zip(answers, contexts):
                 res.append(ans)
