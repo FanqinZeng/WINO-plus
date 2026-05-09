@@ -106,3 +106,153 @@ bash scripts/eval_baseline.sh
 # Evaluating WINO on the reported six multimodel benchmarks
 bash scripts/eval_wino.sh
 ```
+
+## WINO+ Trajectory Data Preparation
+
+WINO+ post-training uses offline WINO trajectories. The lightweight data preparation code is under
+[`prepare_trainingdata/`](./prepare_trainingdata/). It currently supports GSM8K, Countdown, and IconQA.
+
+All trajectory collectors write JSONL records with training-facing fields such as:
+
+```json
+{
+  "prompt_ids": [1, 2, 3],
+  "generated_ids": [4, 5, 6],
+  "trajectory_accepted": [0, 0, 1],
+  "trajectory_proposed": [0, 0, 1],
+  "correct": true
+}
+```
+
+Example: collect LLaDA GSM8K trajectories.
+
+```bash
+python -m prepare_trainingdata.llada.prepare_gsm8k \
+  --model-path /path/to/LLaDA-8B-Instruct \
+  --output-file ./data/gsm8k_processed.jsonl
+
+python -m prepare_trainingdata.llada.collect_gsm8k_trajectories \
+  --model-path /path/to/LLaDA-8B-Instruct \
+  --input-file ./data/gsm8k_processed.jsonl \
+  --output-file ./data/gsm8k_wino_trajectory.jsonl
+```
+
+Example: collect MMaDA IconQA trajectories.
+
+```bash
+python -m prepare_trainingdata.mmada.prepare_iconqa \
+  --model-path /path/to/MMaDA-8B-MixCoT \
+  --input-file /path/to/iconqa_train_dataset.jsonl \
+  --image-root /path/to/iconqa/images \
+  --output-file ./data/iconqa_processed.jsonl
+
+python -m prepare_trainingdata.mmada.collect_iconqa_trajectories \
+  --mmada-model-path /path/to/MMaDA-8B-MixCoT \
+  --vq-model-path showlab/magvitv2 \
+  --input-file ./data/iconqa_processed.jsonl \
+  --image-root /path/to/iconqa/images \
+  --output-file ./data/iconqa_wino_trajectory.jsonl
+```
+
+Filter correct trajectories before training:
+
+```bash
+python -m prepare_trainingdata.common.filter_trajectories \
+  --input-file ./data/iconqa_wino_trajectory.jsonl \
+  --output-file ./data/iconqa_wino_trajectory_filtered.jsonl
+```
+
+See [`prepare_trainingdata/README.md`](./prepare_trainingdata/README.md) for task-specific details.
+
+## WINO+ LoRA Training
+
+### LLaDA WINO+ Training
+
+The LLaDA trainer supports the two-stage setup used in the paper: first train on GSM8K trajectories, then continue
+from the first adapter on Countdown trajectories.
+
+Edit [`training/llada/config/llada_wino_plus_two_stage.yaml`](./training/llada/config/llada_wino_plus_two_stage.yaml)
+to set the base model path, trajectory files, and output directories, then run:
+
+```bash
+python -m training.llada.train_wino_plus_lora \
+  --config training/llada/config/llada_wino_plus_two_stage.yaml
+```
+
+### MMaDA WINO+ Training
+
+The MMaDA trainer consumes tokenized trajectory JSONL files whose `prompt_ids` already contain image tokens and the
+text prompt. It does not reload the VQ model during training.
+
+For 8 GPU DeepSpeed ZeRO-3 training:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+accelerate launch \
+  --config_file training/mmada/accelerate_configs/1_node_8_gpus_deepspeed_zero3.yaml \
+  -m training.mmada.train_wino_plus_lora \
+  --config training/mmada/config/mmada_wino_plus_lora.yaml
+```
+
+You can override config values from the command line:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+accelerate launch \
+  --config_file training/mmada/accelerate_configs/1_node_8_gpus_deepspeed_zero3.yaml \
+  -m training.mmada.train_wino_plus_lora \
+  --config training/mmada/config/mmada_wino_plus_lora.yaml \
+  model.mmada.tokenizer_path=/path/to/LLaDA-8B-Instruct \
+  model.mmada.pretrained_model_path=/path/to/MMaDA-8B-MixCoT \
+  dataset.params.train_trajectory_path=/path/to/iconqa_wino_trajectory_filtered.jsonl
+```
+
+For a short smoke test on real trajectory data, add:
+
+```bash
+training.max_train_steps=1 \
+experiment.output_dir=/tmp/mmada_wino_plus_smoke
+```
+
+## Merge LoRA Adapters
+
+After WINO+ LoRA training, merge a single adapter into the base model for evaluation.
+
+Merge LLaDA LoRA:
+
+```bash
+python -m training.llada.merge_lora \
+  --base-model /path/to/LLaDA-8B-Instruct \
+  --adapter /path/to/llada/final_adapter_or_checkpoint \
+  --output-dir /path/to/merged-llada-winoplus
+```
+
+Merge MMaDA LoRA:
+
+```bash
+python -m training.mmada.merge_lora \
+  --base-model /path/to/MMaDA-8B-MixCoT \
+  --adapter /path/to/mmada/adapter \
+  --output-dir /path/to/merged-mmada-winoplus
+```
+
+## Evaluation of WINO+ Models
+
+WINO remains available through the original evaluation commands above. For WINO+ LoRA-merged models, use the
+confidence-threshold decoding path.
+
+LLaDA configs support:
+
+```yaml
+method: confidence_threshold
+```
+
+MMaDA confidence-threshold evaluation can be launched with:
+
+```bash
+cd MMaDA
+MODEL_PATH=/path/to/merged-mmada-winoplus \
+NGPU=1 \
+bash scripts/eval_winoplus.sh
+```
+

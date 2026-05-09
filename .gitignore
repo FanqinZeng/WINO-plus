@@ -38,6 +38,7 @@ build/
 *.mlmodel
 *.log
 *.log.*
+LLaDA/run_configs
 
 # HuggingFace cache (if placed inside repo)
 .cache/

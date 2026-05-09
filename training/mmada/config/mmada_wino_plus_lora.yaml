@@ -1,0 +1,78 @@
+# MMaDA WINO+ LoRA trajectory training.
+# Paths are resolved from the repository root unless they are absolute.
+
+experiment:
+  project: mmada-trajectory-tuning
+  name: mmada-wino-plus-lora
+  output_dir: outputs/mmada_wino_plus/iconqa_lora
+  save_every: 500
+  log_every: 10
+  resume_from_checkpoint: false
+  enable_wandb: false
+
+model:
+  mmada:
+    tokenizer_path: /PATH/TO/LLaDA-8B-Instruct
+    pretrained_model_path: /PATH/TO/MMaDA-8B-MixCoT
+
+lora:
+  r: 128
+  lora_alpha: 128
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  lora_dropout: 0.05
+  bias: none
+  task_type: CAUSAL_LM
+
+dataset:
+  preprocessing:
+    max_seq_length: 2048
+    ignore_id: -100
+  params:
+    train_trajectory_path: data/iconqa_wino_trajectory_filtered.jsonl
+    num_workers: 8
+    pin_memory: true
+
+trajectory:
+  mode: original
+  block_size: 128
+  w_ce_loss: 1.0
+  w_unmask_loss: 0.1
+  w_remask_loss: 1.0
+  threshold: 0.6
+  threshold_back: 0.9
+
+training:
+  gradient_accumulation_steps: 16
+  batch_size_trajectory: 1
+  mixed_precision: bf16
+  enable_tf32: true
+  seed: 10086
+  max_train_steps: 1500
+  gradient_checkpointing: false
+  max_grad_norm: 1.0
+
+optimizer:
+  name: adamw
+  params:
+    learning_rate: 0.0001
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 0.05
+    epsilon: 1.0e-8
+
+lr_scheduler:
+  scheduler: cosine
+  params:
+    warmup_steps: 500
+    min_lr_scale: 0.1
+
+wandb:
+  entity: null
+  resume: auto
