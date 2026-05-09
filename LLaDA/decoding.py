@@ -107,6 +107,82 @@ def add_gumbel_noise(logits, temperature):
     noise = torch.rand_like(logits, dtype=torch.float64)
     gumbel_noise = (- torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
+
+def get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens, threshold=None):
+    logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
+    x0 = torch.argmax(logits_with_noise, dim=-1) # b, l
+
+    if remasking == 'low_confidence':
+        p = F.softmax(logits.to(torch.float32), dim=-1)
+        x0_p = torch.squeeze(
+            torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1) # b, l
+    elif remasking == 'random':
+        x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)
+    else:
+        raise NotImplementedError(remasking)
+
+    x0 = torch.where(mask_index, x0, x)
+    confidence = torch.where(mask_index, x0_p, -np.inf)
+
+    transfer_index = torch.zeros_like(x0, dtype=torch.bool, device=x0.device)
+    if threshold is not None:
+        num_transfer_tokens = mask_index.sum(dim=1, keepdim=True)
+
+    for j in range(confidence.shape[0]):
+        k = int(num_transfer_tokens[j].item()) if torch.is_tensor(num_transfer_tokens[j]) else int(num_transfer_tokens[j])
+        if k <= 0:
+            continue
+        _, select_index = torch.topk(confidence[j], k=k)
+        transfer_index[j, select_index] = True
+        if threshold is not None:
+            for rank in range(1, k):
+                if confidence[j, select_index[rank]] < threshold:
+                    transfer_index[j, select_index[rank]] = False
+    return x0, transfer_index
+
+
+@ torch.no_grad()
+def decoding_with_confidence_threshold(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+             remasking='low_confidence', mask_id=126336, confidence_threshold=0.9):
+    '''
+    Confidence-threshold decoding. Tokens above the threshold are accepted,
+    while the highest-confidence token is still accepted each round to ensure progress.
+    '''
+    x = torch.full((1, prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+    x[:, :prompt.shape[1]] = prompt.clone()
+
+    assert gen_length % block_length == 0
+    num_blocks = gen_length // block_length
+
+    assert steps % num_blocks == 0
+    steps = steps // num_blocks
+
+    nfe = 0
+    for num_block in range(num_blocks):
+        block_mask_index = (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id)
+        num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
+        i = 0
+        while True:
+            nfe += 1
+            mask_index = (x == mask_id)
+            logits = model(x).logits
+            mask_index[:, prompt.shape[1] + (num_block + 1) * block_length:] = 0
+
+            x0, transfer_index = get_transfer_index(
+                logits,
+                temperature,
+                remasking,
+                mask_index,
+                x,
+                num_transfer_tokens[:, i] if confidence_threshold is None else None,
+                confidence_threshold,
+            )
+
+            x[transfer_index] = x0[transfer_index]
+            i += 1
+            if (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id).sum() == 0:
+                break
+    return x, nfe
         
      
 @torch.no_grad()
