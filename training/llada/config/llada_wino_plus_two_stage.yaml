@@ -1,0 +1,96 @@
+# Two-stage LLaDA WINO+ LoRA training.
+# Paths are resolved from the repository root unless they are absolute.
+
+model:
+  name: /PATH/TO/LLaDA-8B-Instruct
+  trust_remote_code: true
+  torch_dtype: bfloat16
+
+lora:
+  r: 128
+  lora_alpha: 128
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  lora_dropout: 0.0
+  bias: none
+  task_type: CAUSAL_LM
+
+loss:
+  mask_token_id: 126336
+  block_size: 128
+  temperature: 1.0
+  w_ce_loss: 1.0
+  w_unmask_loss: 0.1
+  w_remask_loss: 1.0
+  threshold: 0.6
+  threshold_back: 0.9
+  legacy_block_mask_scope: true
+
+data:
+  mask_token_id: 126336
+  block_length: 128
+  map_batch_size: 100
+  max_prompt_length: 192
+  train_size: 0.6
+  shuffle_train_split: false
+  collator_max_length: 448
+  cache_root: outputs/llada_wino_plus/cache
+
+training_common:
+  num_train_epochs: 6
+  gradient_accumulation_steps: 8
+  per_device_train_batch_size: 1
+  logging_steps: 10
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  bf16: true
+  optim: adamw_torch
+  max_grad_norm: 1
+  group_by_length: false
+  lr_scheduler_type: constant
+  save_strategy: epoch
+  per_device_eval_batch_size: 1
+
+deepspeed:
+  train_batch_size: auto
+  train_micro_batch_size_per_gpu: auto
+  gradient_accumulation_steps: auto
+  gradient_clipping: auto
+  zero_allow_untested_optimizer: true
+  bf16:
+    enabled: auto
+  zero_optimization:
+    stage: 2
+    offload_optimizer:
+      device: cpu
+      pin_memory: true
+    allgather_partitions: true
+    allgather_bucket_size: 200000000.0
+    reduce_scatter: true
+    reduce_bucket_size: 200000000.0
+    overlap_comm: true
+    contiguous_gradients: true
+
+output_root: outputs/llada_wino_plus
+
+stages:
+  - name: gsm8k
+    trajectory_file: data/gsm8k_wino_trajectory.jsonl
+    trajectory_field: wino_trajectory
+    output_dir: outputs/llada_wino_plus/gsm8k_lora
+    processed_cache_dir: outputs/llada_wino_plus/cache/gsm8k
+    loss_log_file: outputs/llada_wino_plus/gsm8k_loss_log.csv
+
+  - name: countdown
+    trajectory_file: data/countdown_wino_trajectory_filtered.jsonl
+    trajectory_field: trajectory_accepted
+    output_dir: outputs/llada_wino_plus/countdown_lora
+    processed_cache_dir: outputs/llada_wino_plus/cache/countdown
+    loss_log_file: outputs/llada_wino_plus/countdown_loss_log.csv
+    init_adapter: previous
