@@ -166,6 +166,31 @@ See [`prepare_trainingdata/README.md`](./prepare_trainingdata/README.md) for tas
 
 ## WINO+ LoRA Training
 
+WINO+ training uses separate `uv` environments from the LLaDA and MMaDA evaluation environments above. Do not reuse
+or modify existing external project environments when setting up these training runs.
+
+Create a dedicated LLaDA training environment:
+
+```bash
+cd /path/to/WINO-DLLM
+uv venv --python 3.10 training/llada/.venv
+source training/llada/.venv/bin/activate
+uv pip install -r training/llada/requirements.txt
+deactivate
+```
+
+Create a dedicated MMaDA training environment:
+
+```bash
+cd /path/to/WINO-DLLM
+uv venv --python 3.11 training/mmada/.venv
+source training/mmada/.venv/bin/activate
+uv pip install -r training/mmada/requirements.txt
+deactivate
+```
+
+Activate only the matching training environment before launching each trainer.
+
 ### LLaDA WINO+ Training
 
 The LLaDA trainer supports the two-stage setup used in the paper: first train on GSM8K trajectories, then continue
@@ -175,6 +200,7 @@ Edit [`training/llada/config/llada_wino_plus_two_stage.yaml`](./training/llada/c
 to set the base model path, trajectory files, and output directories, then run:
 
 ```bash
+source training/llada/.venv/bin/activate
 python -m training.llada.train_wino_plus_lora \
   --config training/llada/config/llada_wino_plus_two_stage.yaml
 ```
@@ -187,6 +213,7 @@ text prompt. It does not reload the VQ model during training.
 For 8 GPU DeepSpeed ZeRO-3 training:
 
 ```bash
+source training/mmada/.venv/bin/activate
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 accelerate launch \
   --config_file training/mmada/accelerate_configs/1_node_8_gpus_deepspeed_zero3.yaml \
@@ -197,6 +224,7 @@ accelerate launch \
 You can override config values from the command line:
 
 ```bash
+source training/mmada/.venv/bin/activate
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 accelerate launch \
   --config_file training/mmada/accelerate_configs/1_node_8_gpus_deepspeed_zero3.yaml \
@@ -221,6 +249,7 @@ After WINO+ LoRA training, merge a single adapter into the base model for evalua
 Merge LLaDA LoRA:
 
 ```bash
+source training/llada/.venv/bin/activate
 python -m training.llada.merge_lora \
   --base-model /path/to/LLaDA-8B-Instruct \
   --adapter /path/to/llada/final_adapter_or_checkpoint \
@@ -230,6 +259,7 @@ python -m training.llada.merge_lora \
 Merge MMaDA LoRA:
 
 ```bash
+source training/mmada/.venv/bin/activate
 python -m training.mmada.merge_lora \
   --base-model /path/to/MMaDA-8B-MixCoT \
   --adapter /path/to/mmada/adapter \
@@ -252,7 +282,6 @@ MMaDA confidence-threshold evaluation can be launched with:
 ```bash
 cd MMaDA
 MODEL_PATH=/path/to/merged-mmada-winoplus \
-NGPU=1 \
+NGPU=8 \
 bash scripts/eval_winoplus.sh
 ```
-

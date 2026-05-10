@@ -1,0 +1,11 @@
+# LLaDA WINO+ LoRA training environment.
+# Keep this environment separate from LLaDA evaluation environments.
+accelerate==0.34.2
+datasets==3.2.0
+deepspeed==0.16.2
+numpy==1.26.4
+peft==0.14.0
+PyYAML==6.0.3
+safetensors==0.6.2
+torch==2.0.1
+transformers==4.49.0
